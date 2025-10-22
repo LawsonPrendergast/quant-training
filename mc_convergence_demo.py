@@ -10,9 +10,13 @@ def mc_stats_vs_paths(mc_model, option_obj, Ns, bump=0.10):
         prices.append(p); ses.append(se); deltas.append(d)
     return np.array(prices), np.array(ses), np.array(deltas)
 
-def plot_convergence(mc_model, bs_model, option_obj, Ns, bump=0.10):
+def plot_convergence(mc_model, bs_model, option_obj, Ns, bump=0.10, antithetic=False):
     true_price = bs_model.price(option_obj)
     true_delta = bs_model.greeks(option_obj)['delta']
+    true_gamma = bs_model.greeks(option_obj)['gamma']
+    true_vega = bs_model.greeks(option_obj)['vega']
+    vegas = np.array([mc_model.vega(option_obj, vol_bump=0.01, num_paths=N)for N in Ns])
+    gammas = np.array([mc_model.gamma(option_obj, bump=bump, num_paths=N) for N in Ns])
     prices, ses, deltas = mc_stats_vs_paths(mc_model, option_obj, Ns, bump=bump)
     plt.figure(figsize=(8,5))
     plt.plot(Ns, prices, marker='o', label='MC Price')
@@ -37,6 +41,30 @@ def plot_convergence(mc_model, bs_model, option_obj, Ns, bump=0.10):
     plt.tight_layout()
     plt.show()
 
+    plt.figure(figsize=(8,5))
+    plt.plot(Ns, gammas, marker="o", label="MC gamma (FD)")
+    plt.axhline(true_gamma, linestyle="--", label="Analytic gamma")
+    plt.xscale("log")
+    plt.title("MC Convergence: Gamma vs Number of Paths")
+    plt.xlabel("Number of paths (log scale)")
+    plt.ylabel("Gamma")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+    plt.figure(figsize=(8,5))
+    plt.plot(Ns, vegas, marker="o", label="MC vega (FD)")
+    plt.axhline(true_vega, linestyle="--", label="Analytic vega")
+    plt.xscale("log")
+    plt.title("MC Convergence: Vega vs Number of Paths")
+    plt.xlabel("Number of paths (log scale)")
+    plt.ylabel("Vega")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    c = ses[0] * np.sqrt(Ns[0])
+    
+
 if __name__ == "__main__":
     from QuantLib import Date, Settings, Period, Months, Option
 
@@ -59,4 +87,5 @@ if __name__ == "__main__":
     Ns = np.array([500, 1000, 2000, 5000, 10000, 20000, 50000])
 
     # Run the convergence plots
-    plot_convergence(mc, bs, opt, Ns, bump=0.10)
+    plot_convergence(mc, bs, opt, Ns, bump=0.10, antithetic=False)
+    plot_convergence(mc, bs, opt, Ns, bump=0.10, antithetic=True)
