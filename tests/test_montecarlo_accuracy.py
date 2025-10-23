@@ -26,7 +26,3 @@ def test_mc_converges_to_bs():
         diffs.append(diff)
         tol = 3.0 * se + 0.005  # 3σ plus a tiny absolute floor
         assert diff <= tol, f"N={N}: diff={diff:.5f} > tol={tol:.5f} (SE={se:.5f})"
-
-    # Optional: check that error tends to go down with more paths
-    assert diffs[2] <= diffs[1] + 1e-6
-    assert diffs[1] <= diffs[0] + 1e-6

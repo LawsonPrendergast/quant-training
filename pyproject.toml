@@ -1,0 +1,5 @@
+[project]
+name = "quant-training"
+version = "0.1.0"
+description = "QuantLib wrapper and Monte Carlo pricing demos"
+requires-python = ">=3.10"
