@@ -1,10 +1,10 @@
-from QuantLib import Settings, QuoteHandle, SimpleQuote, Actual365Fixed, YieldTermStructureHandle, FlatForward, BlackVolTermStructureHandle, BlackConstantVol, NullCalendar, BlackScholesProcess, PlainVanillaPayoff, EuropeanExercise, VanillaOption, AnalyticEuropeanEngine, BlackScholesMertonProcess
+from QuantLib import Settings, QuoteHandle, SimpleQuote, Actual365Fixed, YieldTermStructureHandle, FlatForward, BlackVolTermStructureHandle, BlackConstantVol, NullCalendar, BlackScholesProcess, PlainVanillaPayoff, EuropeanExercise, VanillaOption, AnalyticEuropeanEngine, BlackScholesMertonProcess, AmericanExercise, BaroneAdesiWhaleyApproximationEngine, BinomialVanillaEngine, FdBlackScholesVanillaEngine
 from QuantLib import Date, Option as QLOption
 import math
 import numpy as np
 
 class BlackScholesModel:
-    def __init__(self, spot=None, risk_free_rate=None, volatility=None, market=None):
+    def __init__(self, spot=None, risk_free_rate=None, volatility=None, market=None, engine_type: str = "analytic", binomial_steps: int = 201):
         self.market = market
         self.today = Date().todaysDate()
         Settings.instance().evaluationDate = self.today
@@ -15,12 +15,20 @@ class BlackScholesModel:
         
         if market is not None:
             self.rate_curve = market.r_handle
-            self.vol_curve = (market.vol_handle if market.vol_handle is not None
-                  else BlackVolTermStructureHandle(BlackConstantVol(self.today, NullCalendar(), float(volatility), day_count)))
-        else:
-            self.rate_curve = YieldTermStructureHandle(FlatForward(self.today, float(risk_free_rate), day_count))
-            self.vol_curve = BlackVolTermStructureHandle(BlackConstantVol(self.today, NullCalendar(), float(volatility), day_count))
 
+            if getattr(market, "vol_handle", None) is not None:
+                self.vol_curve = market.vol_handle
+            else:
+                self.vol_curve = BlackVolTermStructureHandle(
+                    BlackConstantVol(self.today, NullCalendar(), float(volatility), day_count)
+                )
+        else:
+            self.rate_curve = YieldTermStructureHandle(
+                FlatForward(self.today, float(risk_free_rate), day_count)
+            )
+            self.vol_curve = BlackVolTermStructureHandle(
+                BlackConstantVol(self.today, NullCalendar(), float(volatility), day_count)
+            )
         # Dividend/foreign yield curve (q)
         self.div_curve = (market.q_handle if market is not None
                           else YieldTermStructureHandle(FlatForward(self.today, 0.0, day_count)))
@@ -31,6 +39,7 @@ class BlackScholesModel:
             self.rate_curve,
             self.vol_curve,
         )
+
     
     def price(self, instrument) -> float:
         process = BlackScholesMertonProcess(
@@ -38,13 +47,20 @@ class BlackScholesModel:
             self.market.q_handle,
             self.market.r_handle,
             self.market.vol_handle)
-        engine = AnalyticEuropeanEngine(process)
         payoff = PlainVanillaPayoff(instrument.option_type, instrument.strike)
-        exercise = EuropeanExercise(instrument.maturity)
+
+        if getattr(instrument, "style", "European") == "American":
+            exercise = AmericanExercise(self.today, instrument.maturity)
+            engine = BaroneAdesiWhaleyApproximationEngine(self.bs_process)
+ 
+        else:
+            exercise = EuropeanExercise(instrument.maturity)
+            engine = AnalyticEuropeanEngine(self.bs_process)
+        
         ql_option = VanillaOption(payoff, exercise)
         ql_option.setPricingEngine(engine)
 
-        return ql_option.NPV()
+        return float(ql_option.NPV())
         
     def greeks(self, instrument):
         process = BlackScholesMertonProcess(self.market.spot_handle,
@@ -192,3 +208,38 @@ class MonteCarloModel:
         return (up_price - dn_price) / (2.0 * vol_bump)
         
             
+class FiniteDifferenceModel:
+
+    def __init__(self, market, time_steps: int = 100, grid_points: int = 100):
+        self.market = market
+        self.time_steps = time_steps
+        self.grid_points = grid_points
+        self.today = Date().todaysDate()
+        Settings.instance().evaluationDate = self.today
+
+    
+    def price(self, instrument):
+        """Price a European or American option using finite-difference engine"""
+        process = BlackScholesMertonProcess(
+            self.market.spot_handle,
+            self.market.q_handle,
+            self.market.r_handle,
+            self.market.vol_handle,
+        )
+        payoff = PlainVanillaPayoff(instrument.option_type, instrument.strike)
+
+        if getattr(instrument, "style", "European") == "American":
+            exercise = AmericanExercise(self.today, instrument.maturity)
+        else:
+            exercise = EuropeanExercise(instrument.maturity)
+        
+        ql_option = VanillaOption(payoff, exercise)
+        engine = FdBlackScholesVanillaEngine(process, self.time_steps, self.grid_points)
+        ql_option.setPricingEngine(engine)
+
+        return float(ql_option.NPV())
+    
+    
+
+
+
